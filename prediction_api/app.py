@@ -5,24 +5,32 @@ import numpy as np
 app = Flask(__name__)
 model = joblib.load('model.pkl')
 
-def sigmoid(x):
-    # Maps any real value to a value between 0 and 1
-    return 1 / (1 + np.exp(-x))
-
 @app.route('/predict', methods=['POST'])
 def predict():
-    data = request.json
-    features = [data['heart_rate'], data['oxygen_level'], data['temperature']]
-    
-    # Use decision_function() which returns an anomaly score.
-    # Lower scores mean more anomalous.
-    anomaly_score = model.decision_function([features])[0]
-    
-    # We negate the score and apply a sigmoid function.
-    # This maps a highly anomalous (very negative) score to a probability near 1.0.
-    failure_probability = sigmoid(-anomaly_score)
-    
-    return jsonify({'failure_probability': failure_probability})
+    """Predicts the failure probability based on telemetry data."""
+    try:
+        data = request.get_json()
+        
+        # Ensure the data contains the required features
+        if not all(key in data for key in ['heart_rate', 'oxygen_level', 'temperature']):
+            return jsonify({"error": "Missing required telemetry data"}), 400
+
+        features = [data['heart_rate'], data['oxygen_level'], data['temperature']]
+        
+        # IsolationForest uses decision_function, not predict_proba.
+        # Scores are <= 0 for inliers (normal) and > 0 for outliers (anomalies).
+        anomaly_score = model.decision_function([features])[0]
+        
+        # Convert the anomaly score to a 0-1 probability.
+        # This is a simple sigmoid-like scaling. As score goes from negative to positive,
+        # probability goes from near 0 to near 1.
+        failure_probability = 1 / (1 + np.exp(-anomaly_score * 5)) # The multiplier '5' sharpens the curve
+
+        return jsonify({'failure_probability': failure_probability})
+
+    except Exception as e:
+        print(f"Error during prediction: {e}")
+        return jsonify({"error": "Could not process request"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002)
