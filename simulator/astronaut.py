@@ -28,9 +28,15 @@ def get_vitals():
 
     # Generate anomalous data if fault is active
     if fault_injected:
-        heart_rate = random.randint(180, 220)
-        oxygen_level -= random.uniform(15, 25) # Rapid oxygen loss
-        temperature = round(random.uniform(40.0, 42.0), 2)
+        # --- NEW, EVEN MORE EXTREME VALUES ---
+        # These values are pushed to a point of catastrophic system failure.
+        
+        heart_rate = random.randint(240, 280)           # Represents ventricular fibrillation/tachycardia
+        
+        # Instead of a rapid decrease, we'll set oxygen to a critically low level instantly.
+        oxygen_level = random.uniform(0, 10)
+        
+        temperature = round(random.uniform(43.0, 45.0), 2)  # Represents complete thermoregulatory failure
     else:
         heart_rate = random.randint(65, 85)
         oxygen_level -= random.uniform(0.05, 0.2)
@@ -39,6 +45,8 @@ def get_vitals():
     if oxygen_level < 0:
         oxygen_level = 0
     
+    # This is the JSON object that will be sent to the prediction API
+    # It must contain the keys the model was trained on.
     telemetry_for_prediction = {
         "heart_rate": heart_rate,
         "oxygen_level": round(oxygen_level, 2),
