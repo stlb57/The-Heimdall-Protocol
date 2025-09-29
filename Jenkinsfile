@@ -44,7 +44,7 @@ pipeline {
                             docker build -t prediction-api ./prediction_api
                             
                             # --- THIS IS THE FIX ---
-                            # Always stop and remove old containers before starting new ones.
+                            # Always stop and remove old containers before starting new ones to prevent conflicts.
                             echo "Cleaning up old containers..."
                             docker stop astronaut || true && docker rm astronaut || true
                             docker stop predictor || true && docker rm predictor || true
@@ -67,6 +67,7 @@ EOF
                             sleep(45) // Allow containers to initialize
                             while (!failureDetected) {
                                 try {
+                                    // This grep is now more specific to your JSON structure
                                     def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs astronaut 2>/dev/null | grep \"^{\\\"heart_rate\" | tail -n 1'", returnStdout: true).trim()
 
                                     if (telemetryLog) {
@@ -106,7 +107,7 @@ EOF
         }
         always {
             script {
-                // Ensure cleanup happens even on a successful or aborted build
+                // Ensure cleanup happens even on a successful or aborted build, but not during self-healing
                 if (currentBuild.result != 'UNSTABLE') {
                     echo "Pipeline finished. Tearing down infrastructure..."
                     sh 'terraform destroy -auto-approve'
@@ -115,3 +116,4 @@ EOF
         }
     }
 }
+
