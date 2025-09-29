@@ -47,57 +47,17 @@ EOF
                  }
             }
         }
-
-        stage('🔴 Monitor System') {
-            steps {
-                timeout(time: 30, unit: 'MINUTES') {
-                    script {
-                        def failureDetected = false
-                        sleep(45) // Allow containers to initialize
-                        while (!failureDetected) {
-                            try {
-                                def telemetryData = sh(script: "curl --fail -s http://${env.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
-                                if (telemetryData) {
-                                    def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
-                                    if (predictionResponse) {
-                                        def responseJson = readJSON(text: predictionResponse)
-                                        def failureProb = responseJson.failure_probability
-                                        echo "Monitoring... Current Failure Probability: ${(failureProb * 100).round(2)}%"
-                                        if (failureProb > 0.90) {
-                                            failureDetected = true
-                                            // This will fail the stage and correctly set the build to UNSTABLE
-                                            error("Heimdall Protocol Activated: Failure probability exceeded 90%.")
-                                        }
-                                    }
-                                }
-                            } catch (Exception e) {
-                                // This catch is for network errors during monitoring, not for the failure condition itself
-                                echo "Monitoring check failed with a network or command error: ${e.message}. Retrying..."
-                            }
-                            sleep(5)
-                        }
-                    }
-                }
-            }
-        }
     }
-    // =================== FINAL, CORRECTED POST BLOCK ===================
+    // This post block now only runs on SUCCESS
+    // It's one and only job is to hand off control to the monitor.
     post {
-        // This block runs ONLY when the build is UNSTABLE (e.g., from our error() call)
-        unstable {
-            script {
-                echo "🔴 SELF-HEALING: Build is UNSTABLE. Initiating recovery protocol."
-                echo "STEP 1: Destroying faulty infrastructure..."
-                sh 'terraform destroy -auto-approve'
-                echo "STEP 2: Triggering new build to provision fresh infrastructure..."
-                build job: 'heimdall-protocol', wait: false
-            }
-        }
-        // This block runs ONLY on a completely successful build
         success {
             script {
-                echo "✅ SUCCESS: Pipeline completed normally. Tearing down infrastructure."
-                sh 'terraform destroy -auto-approve'
+                echo "✅ BUILD SUCCESSFUL. Handing off to the monitoring pipeline..."
+                def serverIp = readFile('server_ip.txt').trim()
+                build job: 'heimdall-monitor', 
+                      parameters: [string(name: 'SERVER_IP', value: serverIp)], 
+                      wait: false
             }
         }
     }
