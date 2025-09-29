@@ -27,10 +27,10 @@ pipeline {
         stage('🔵 Deploy Application') {
             steps {
                 sshagent(credentials: ['aws-key']) {
-                    sh "sleep 30 && until ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} exit; do echo -n '.'; sleep 5; done"
-                    sh "scp -o StrictHostKeyChecking=no -r . ubuntu@${env.SERVER_IP}:~/heimdall-protocol"
+                    sh "sleep 30 && until ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} exit; do echo -n '.'; sleep 5; done"
+                    sh "scp -o StrictHostKeyChecking=no -o BatchMode=yes -r . ubuntu@${env.SERVER_IP}:~/heimdall-protocol"
                     sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
+                        ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} << 'EOF'
                             set -e
                             cd ~/heimdall-protocol
                             docker build -t astronaut-simulator ./simulator
@@ -50,7 +50,7 @@ pipeline {
                         def failureDetected = false
                         while (!failureDetected) {
                             try {
-                                def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} 'docker logs --tail 1 astronaut'", returnStdout: true).trim()
+                                def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs --tail 1 astronaut'", returnStdout: true).trim()
                                 def predictionResponse = sh(script: "curl -s -X POST -H \"Content-Type: application/json\" -d '${telemetryLog}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
                                 def responseJson = readJSON(text: predictionResponse)
                                 def failureProb = responseJson.failure_probability
