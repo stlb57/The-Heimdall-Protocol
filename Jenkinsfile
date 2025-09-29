@@ -36,18 +36,10 @@ pipeline {
                             mkdir -p heimdall-protocol
                             tar -xzvf heimdall-protocol.tar.gz -C heimdall-protocol
                             cd heimdall-protocol
-                            
-                            echo "Building astronaut simulator..."
                             docker build -t astronaut-simulator ./simulator
-                            
-                            echo "Building prediction API..."
                             docker build -t prediction-api ./prediction_api
-                            
-                            echo "Cleaning up old containers..."
                             docker stop astronaut || true && docker rm astronaut || true
                             docker stop predictor || true && docker rm predictor || true
-                            
-                            echo "Launching new containers..."
                             docker run -d -p 5001:5001 --name astronaut astronaut-simulator
                             docker run -d -p 5002:5002 --name predictor prediction-api
 EOF
@@ -56,72 +48,70 @@ EOF
             }
         }
 
+        // =================== MODIFIED SECTION START ===================
         stage('🔴 Monitor & Self-Heal') {
             steps {
-                sshagent(credentials: ['aws-key']) {
-                    timeout(time: 30, unit: 'MINUTES') {
-                        script {
+                script {
+                    try {
+                        timeout(time: 30, unit: 'MINUTES') {
                             def failureDetected = false
                             sleep(45) // Allow containers to initialize
                             while (!failureDetected) {
-                                try {
-                                    // Step 1: Get live telemetry directly from the simulator's API endpoint.
-                                    def telemetryData = sh(script: "curl --fail -s http://${env.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
+                                // Get live telemetry directly from the simulator's API endpoint.
+                                def telemetryData = sh(script: "curl --fail -s http://${env.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
 
-                                    if (telemetryData) {
-                                        // Step 2: Send that telemetry to the prediction API.
-                                        def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
+                                if (telemetryData) {
+                                    // Send telemetry to the prediction API.
+                                    def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
 
-                                        if (predictionResponse) {
-                                            def responseJson = readJSON(text: predictionResponse)
-                                            def failureProb = responseJson.failure_probability
-                                            echo "Monitoring... Current Failure Probability: ${(failureProb * 100).round(2)}%"
+                                    if (predictionResponse) {
+                                        def responseJson = readJSON(text: predictionResponse)
+                                        def failureProb = responseJson.failure_probability
+                                        echo "Monitoring... Current Failure Probability: ${(failureProb * 100).round(2)}%"
 
-                                            if (failureProb > 0.90) {
-                                                echo "CRITICAL ALERT! FAILURE PROBABILITY EXCEEDS 90%!"
-                                                echo "EXECUTING HEIMDALL PROTOCOL."
-                                                failureDetected = true
-                                                error("Heimdall Protocol Activated") // Trigger 'unstable' post-build action
-                                            }
+                                        if (failureProb > 0.90) {
+                                            failureDetected = true
+                                            // This error call is caught by the 'catch' block below
+                                            error("Heimdall Protocol Activated: Failure probability exceeded 90%.")
                                         }
                                     }
-                                } catch (Exception e) {
-                                    echo "Monitoring check failed: ${e.message}. Retrying..."
                                 }
                                 sleep(5)
                             }
                         }
+                    } catch (Exception e) {
+                        // THIS IS THE SELF-HEALING LOGIC BLOCK
+                        echo "🔴 CATCH BLOCK: SELF-HEALING PROTOCOL INITIATED due to: ${e.message}"
+
+                        echo "🔵 STEP 1: Tearing down the old, unstable infrastructure..."
+                        sh 'terraform destroy -auto-approve'
+
+                        echo "🟢 STEP 2: Triggering a new build to provision fresh infrastructure. (Not waiting for completion)"
+                        build job: 'heimdall-protocol', wait: false
+
+                        // Explicitly set the build result so the 'always' block behaves correctly.
+                        currentBuild.result = 'UNSTABLE'
                     }
                 }
             }
         }
+        // =================== MODIFIED SECTION END =====================
     }
-    // =================== MODIFIED SECTION START ===================
+    // =================== MODIFIED POST BLOCK START ==================
     post {
-        unstable {
-            script {
-                echo "🔴 Self-healing triggered due to UNSTABLE status."
-                
-                echo "🔵 STEP 1: Tearing down the old, unstable infrastructure..."
-                sh 'terraform destroy -auto-approve'
-
-                echo "🟢 STEP 2: Triggering a new build to provision fresh infrastructure. (Not waiting for completion)"
-                // This is the critical fix. 'wait: false' tells Jenkins to start the
-                // new build and immediately let this current build finish, avoiding a deadlock.
-                build job: 'heimdall-protocol', wait: false
-            }
-        }
         always {
             script {
-                // This 'always' block is for normal cleanup. The condition ensures it does NOT
-                // run during a self-healing event, preventing a double-destroy command.
-                if (currentBuild.result != 'UNSTABLE') {
-                    echo "Pipeline finished. Tearing down infrastructure as part of normal cleanup."
+                // This 'always' block is now only for normal cleanup.
+                // It will only run if the pipeline completes successfully.
+                if (currentBuild.result == 'SUCCESS') {
+                    echo "✅ Pipeline finished with SUCCESS. Tearing down infrastructure as part of normal cleanup."
                     sh 'terraform destroy -auto-approve'
+                } else {
+                    echo "🟡 Pipeline did not finish successfully (Status: ${currentBuild.result}). Normal cleanup skipped to allow for investigation or self-healing."
                 }
             }
         }
     }
-    // =================== MODIFIED SECTION END =====================
+    // =================== MODIFIED POST BLOCK END ====================
 }
 
