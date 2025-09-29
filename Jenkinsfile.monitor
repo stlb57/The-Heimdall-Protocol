@@ -1,3 +1,5 @@
+// heimdall-protocol/Jenkinsfile.monitor
+
 pipeline {
     agent any
 
@@ -22,28 +24,31 @@ pipeline {
                     script {
                         echo "MONITOR: Starting to monitor server at IP: ${params.SERVER_IP}"
                         def failureDetected = false
-                        sleep(45) 
-                        
+                        sleep(45)
+
                         while (!failureDetected) {
+                            def predictionResponse = null
                             try {
+                                // This 'try' block ONLY handles network/command failures.
                                 def telemetryData = sh(script: "curl --fail -s http://${params.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
-                                def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${params.SERVER_IP}:5002/predict", returnStdout: true).trim()
-                                
-                                def responseJson = readJSON(text: predictionResponse)
-                                def failureProb = responseJson.failure_probability
-                                echo "Monitoring ${params.SERVER_IP}... Failure Probability: ${(failureProb * 100).round(2)}%"
-                                
-                                if (failureProb > 0.90) {
-                                    failureDetected = true
-                                    // This call correctly sets the build status to FAILURE
-                                    error("Heimdall Protocol Activated: Failure probability exceeded 90%.")
-                                }
+                                predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${params.SERVER_IP}:5002/predict", returnStdout: true).trim()
 
                             } catch (Exception e) {
                                 echo "MONITOR: Server at ${params.SERVER_IP} is unresponsive. Triggering self-healing."
                                 failureDetected = true
-                                // This call correctly sets the build status to FAILURE
-                                error("Heimdall Protocol Activated: Server is unresponsive.") 
+                                error("Heimdall Protocol Activated: Server is unresponsive.")
+                            }
+
+                            // This logic now runs ONLY if the 'try' block was successful.
+                            if (predictionResponse) {
+                                def responseJson = readJSON(text: predictionResponse)
+                                def failureProb = responseJson.failure_probability
+                                echo "Monitoring ${params.SERVER_IP}... Failure Probability: ${(failureProb * 100).round(2)}%"
+
+                                if (failureProb > 0.90) {
+                                    failureDetected = true
+                                    error("Heimdall Protocol Activated: Failure probability exceeded 90%.")
+                                }
                             }
                             sleep(5)
                         }
@@ -52,19 +57,27 @@ pipeline {
             }
         }
     }
-    // =================== FINAL, CORRECTED POST BLOCK ===================
     post {
-        // This block now correctly runs ONLY when the build status is FAILURE
         failure {
             script {
                 echo "🔴 SELF-HEALING: Build has FAILED. Initiating recovery protocol."
-                echo "STEP 1: Destroying faulty infrastructure..."
+
+                // ✅ STEP 1: Copy the Terraform state from the parent job.
+                echo "STEP 1: Copying Terraform state from parent job..."
+                copyArtifacts(
+                    projectName: 'heimdall-protocol',
+                    selector: lastSuccessful()
+                )
+
+                // ✅ STEP 2: Destroy the faulty infrastructure.
+                echo "STEP 2: Destroying faulty infrastructure..."
                 sh 'terraform init'
                 sh 'terraform destroy -auto-approve'
-                echo "STEP 2: Triggering new build to provision fresh infrastructure..."
+
+                // ✅ STEP 3: Trigger a new build to provision fresh infrastructure.
+                echo "STEP 3: Triggering new build to provision fresh infrastructure..."
                 build job: 'heimdall-protocol', wait: false
             }
         }
     }
 }
-
