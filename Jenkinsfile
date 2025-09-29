@@ -54,7 +54,7 @@ EOF
                         script {
                             def failureDetected = false
                             // Add a 15-second delay before the first monitoring check to allow containers to initialize.
-                            sleep(15) 
+                            sleep(40) 
                             while (!failureDetected) {
                                 try {
                                     def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs --tail 1 astronaut'", returnStdout: true).trim()
