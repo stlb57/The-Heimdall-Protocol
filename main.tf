@@ -60,7 +60,7 @@ resource "aws_route_table_association" "a" {
 # 6. Create a Security Group (Firewall)
 resource "aws_security_group" "heimdall_sg" {
   name        = "heimdall-sg"
-  description = "Allow SSH, HTTP, and App ports for Heimdall"
+  description = "Allow SSH and App ports for Heimdall"
   vpc_id      = aws_vpc.heimdall_vpc.id
 
   # Allow SSH from anywhere
@@ -102,7 +102,8 @@ resource "aws_security_group" "heimdall_sg" {
 
 # 7. Create the Drone Server, now with specific network settings
 resource "aws_instance" "drone_server" {
-  ami           = "ami-053b0d5c2235481f5" # Ubuntu 22.04 LTS for us-east-1 (Updated AMI)
+  # === THIS IS THE CORRECTED LINE ===
+  ami           = "ami-053b0d53c279acc90" # Correct Ubuntu 22.04 LTS for us-east-1
   instance_type = "t2.micro"
   key_name      = "heimdall-key"
 
