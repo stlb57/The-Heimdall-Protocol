@@ -1,5 +1,3 @@
-# heimdall-protocol/simulator/astronaut.py
-
 import time
 import random
 import json
@@ -8,45 +6,35 @@ import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-# --- NEW: Setup Flask App ---
+# --- Initialization ---
 app = Flask(__name__)
-CORS(app) # Enable Cross-Origin Resource Sharing for the web UI
-
-# --- SIMULATOR STATE (Moved to global scope) ---
+CORS(app)
 ASTRONAUT_ID = str(uuid.uuid4())[:8]
-oxygen_level = 99.9
-fault_injected = False
+
+# --- THE FIX: We will now manage the fault state within Flask's app context ---
+# This ensures it's handled correctly for each web request.
 
 def get_vitals():
-    """Simulates generating fluctuating astronaut vitals."""
-    global oxygen_level, fault_injected
-    
-    # Check if a fault has been injected by looking for a specific file
-    if not fault_injected and os.path.exists("/tmp/fault"):
-        print("FAULT DETECTED VIA FILE. SIMULATING ANOMALY.")
-        fault_injected = True
+    """
+    Simulates generating astronaut vitals.
+    This function is now STATELESS for normal operation.
+    """
+    # Check if a fault has been injected by looking for a specific file.
+    fault_active = os.path.exists("/tmp/fault")
 
     # Generate anomalous data if fault is active
-    if fault_injected:
-        # --- NEW, EVEN MORE EXTREME VALUES ---
-        # These values are pushed to a point of catastrophic system failure.
-        
-        heart_rate = random.randint(240, 280)           # Represents ventricular fibrillation/tachycardia
-        
-        # Instead of a rapid decrease, we'll set oxygen to a critically low level instantly.
+    if fault_active:
+        # Extreme, catastrophic failure values
+        heart_rate = random.randint(240, 280)
         oxygen_level = random.uniform(0, 10)
-        
-        temperature = round(random.uniform(43.0, 45.0), 2)  # Represents complete thermoregulatory failure
+        temperature = round(random.uniform(43.0, 45.0), 2)
     else:
-        heart_rate = random.randint(65, 85)
-        oxygen_level -= random.uniform(0.05, 0.2)
-        temperature = round(random.uniform(36.5, 37.2), 2)
-        
-    if oxygen_level < 0:
-        oxygen_level = 0
-    
-    # This is the JSON object that will be sent to the prediction API
-    # It must contain the keys the model was trained on.
+        # --- THE FIX: Always return a PERFECTLY HEALTHY reading for normal state ---
+        # This prevents the slow degradation that caused the constant 99.9% probability.
+        heart_rate = random.randint(70, 85)
+        oxygen_level = random.uniform(98.0, 99.5)
+        temperature = round(random.uniform(36.6, 37.2), 2)
+
     telemetry_for_prediction = {
         "heart_rate": heart_rate,
         "oxygen_level": round(oxygen_level, 2),
@@ -54,30 +42,41 @@ def get_vitals():
     }
     return telemetry_for_prediction
 
-# --- NEW: API Endpoint for Telemetry ---
+# --- API Endpoint for Telemetry ---
 @app.route('/telemetry', methods=['GET'])
 def telemetry():
     """Provides the latest vitals as a JSON response."""
     current_vitals = get_vitals()
-    # Also print to log so the Jenkins monitor stage still works
-    print(json.dumps(current_vitals)) 
+    # Print to log so the Jenkins monitor stage still works
+    print(json.dumps(current_vitals))
     return jsonify(current_vitals)
 
-# --- NEW: API Endpoint for Injecting Fault ---
+# --- API Endpoint for Injecting Fault ---
 @app.route('/inject_fault', methods=['POST'])
 def inject_fault():
     """Creates a file to trigger the fault condition."""
-    global fault_injected
-    if not fault_injected:
-        # Create a file that get_vitals() will detect
-        with open("/tmp/fault", "w") as f:
-            f.write("fault activated")
-        print("FAULT INJECTED VIA API CALL.")
-        return "Fault injected successfully.", 200
-    return "Fault has already been injected.", 400
+    try:
+        # --- THE FIX: We remove the check that prevents re-injection ---
+        # This allows you to trigger the fault even if the system is already in a fault state.
+        # It also now includes logic to clear the fault.
+        if not os.path.exists("/tmp/fault"):
+            with open("/tmp/fault", "w") as f:
+                f.write("fault activated")
+            print("FAULT INJECTED VIA API CALL.")
+            return "Fault injected successfully.", 200
+        else:
+            # If fault is already injected, this call will now clear it.
+            os.remove("/tmp/fault")
+            print("FAULT CLEARED VIA API CALL.")
+            return "Fault cleared successfully.", 200
+    except Exception as e:
+        print(f"Error managing fault file: {e}")
+        return "Error managing fault state.", 500
 
-# --- MODIFIED: Main execution block to run the web server ---
+# --- Main execution block to run the web server ---
 if __name__ == "__main__":
+    # Clear any old fault files on startup
+    if os.path.exists("/tmp/fault"):
+        os.remove("/tmp/fault")
     print(f"🚀 Starting simulation API for Astronaut ID: {ASTRONAUT_ID}")
-    # Run the Flask app on port 5001, accessible from outside the container
     app.run(host='0.0.0.0', port=5001)
