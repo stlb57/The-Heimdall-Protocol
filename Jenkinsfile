@@ -28,15 +28,32 @@ pipeline {
             steps {
                 sshagent(credentials: ['aws-key']) {
                     sh "sleep 30 && until ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} exit; do echo -n '.'; sleep 5; done"
-                    sh "scp -o StrictHostKeyChecking=no -o BatchMode=yes -r . ubuntu@${env.SERVER_IP}:~/heimdall-protocol"
+
+                    // STEP 1: Compress project (excluding .git) into a single archive.
+                    echo "Compressing project files..."
+                    sh "tar --exclude='.git' -czvf heimdall-protocol.tar.gz ."
+
+                    // STEP 2: Transfer the single, small archive file. This is fast and reliable.
+                    echo "Transferring archive to drone server..."
+                    sh "scp -o StrictHostKeyChecking=no -o BatchMode=yes heimdall-protocol.tar.gz ubuntu@${env.SERVER_IP}:~/"
+
+                    // STEP 3: Decompress the archive and run the deployment commands on the remote server.
+                    echo "Executing remote deployment..."
                     sh """
                         ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} << 'EOF'
                             set -e
+                            mkdir -p ~/heimdall-protocol
+                            tar -xzvf ~/heimdall-protocol.tar.gz -C ~/heimdall-protocol
                             cd ~/heimdall-protocol
+                            echo "Building astronaut-simulator image..."
                             docker build -t astronaut-simulator ./simulator
+                            echo "Building prediction-api image..."
                             docker build -t prediction-api ./prediction_api
+                            echo "Launching astronaut-simulator container..."
                             docker run -d --rm -p 5001:5001 --name astronaut astronaut-simulator
+                            echo "Launching prediction-api container..."
                             docker run -d --rm -p 5002:5002 --name predictor prediction-api
+                            echo "✅ Deployment complete. All services are running."
                         EOF
                     """
                 }
@@ -83,3 +100,4 @@ pipeline {
         }
     }
 }
+
