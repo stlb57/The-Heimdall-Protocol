@@ -48,7 +48,6 @@ EOF
             }
         }
 
-        // =================== SIMPLIFIED MONITORING STAGE ===================
         stage('🔴 Monitor System') {
             steps {
                 timeout(time: 30, unit: 'MINUTES') {
@@ -66,13 +65,14 @@ EOF
                                         echo "Monitoring... Current Failure Probability: ${(failureProb * 100).round(2)}%"
                                         if (failureProb > 0.90) {
                                             failureDetected = true
-                                            // This will fail the stage and set the build to UNSTABLE
+                                            // This will fail the stage and correctly set the build to UNSTABLE
                                             error("Heimdall Protocol Activated: Failure probability exceeded 90%.")
                                         }
                                     }
                                 }
                             } catch (Exception e) {
-                                echo "Monitoring check failed: ${e.message}. Retrying..."
+                                // This catch is for network errors during monitoring, not for the failure condition itself
+                                echo "Monitoring check failed with a network or command error: ${e.message}. Retrying..."
                             }
                             sleep(5)
                         }
