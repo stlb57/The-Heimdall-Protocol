@@ -78,8 +78,8 @@ EOF
                                             def failureProb = responseJson.failure_probability
                                             echo "Monitoring... Current Failure Probability: ${(failureProb * 100).round(2)}%"
 
-                                            if (failureProb > 0.95) {
-                                                echo "CRITICAL ALERT! FAILURE PROBABILITY EXCEEDS 95%!"
+                                            if (failureProb > 0.90) {
+                                                echo "CRITICAL ALERT! FAILURE PROBABILITY EXCEEDS 90%!"
                                                 echo "EXECUTING HEIMDALL PROTOCOL."
                                                 failureDetected = true
                                                 error("Heimdall Protocol Activated") // Trigger 'unstable' post-build action
