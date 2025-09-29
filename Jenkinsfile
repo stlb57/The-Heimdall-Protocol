@@ -48,19 +48,17 @@ EOF
 
         stage('🔴 Monitor & Self-Heal') {
             steps {
-                [cite_start]// This stage also needs the SSH key to get logs from the remote server. [cite: 10]
-                sshagent(credentials: ['aws-key']) {
-                    timeout(time: 30, unit: 'MINUTES') {
-                        // THIS IS THE CORRECTED BLOCK
-                        script {
+                // THIS STAGE HAS BEEN REFACTORED TO RESOLVE THE SYNTAX ERROR
+                script {
+                    sshagent(credentials: ['aws-key']) {
+                        timeout(time: 30, unit: 'MINUTES') {
                             def failureDetected = false
                             echo "Allowing 30 seconds for containers to initialize..."
                             sleep(30)
 
                             while (!failureDetected) {
                                 try {
-                                    // MODIFIED COMMAND: Get last 10 lines, filter for one that starts with '{', and get the last match.
-                                    // This ensures we only get JSON and skip startup messages.
+                                    // Get last 10 lines, filter for one that starts with '{', and get the last match.
                                     def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs --tail 10 astronaut | grep \"^{\" | tail -n 1'", returnStdout: true).trim()
 
                                     if (telemetryLog.isEmpty()) {
