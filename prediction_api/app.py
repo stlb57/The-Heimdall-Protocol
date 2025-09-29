@@ -26,6 +26,21 @@ except Exception as e:
 
 TelemetryData = Dict[str, Union[int, float]]
 
+def score_to_probability(score: float) -> float:
+    """
+    Converts the raw score from the SVM's decision_function into a 0-1 probability.
+    A positive score means 'normal' (low probability of failure).
+    A negative score means 'anomaly' (high probability of failure).
+    We use the sigmoid function for a smooth conversion.
+    """
+    # The sigmoid function 1 / (1 + e^-x) maps any real number to (0, 1).
+    # We use -score because a negative score (anomaly) should map to a high probability.
+    probability = 1 / (1 + np.exp(score))
+    
+    # Clamp the value to ensure it's within a realistic range, e.g., [0.01, 0.999]
+    return np.clip(probability, 0.01, 0.999)
+
+
 @app.route('/predict', methods=['POST'])
 def predict() -> Tuple[Any, int]:
     """Predicts the failure probability based on telemetry data."""
@@ -43,23 +58,18 @@ def predict() -> Tuple[Any, int]:
             missing_keys = [key for key in required_keys if key not in data]
             error_msg = f"Missing required telemetry data: {', '.join(missing_keys)}"
             logging.warning(f"Bad request: {error_msg}")
-            return jsonify({"error": error_msg}), 400
+            return jsonify({"error": {error_msg}}), 400
 
         features: List[Union[int, float]] = [data['heart_rate'], data['oxygen_level'], data['temperature']]
         
         # --- THE CORRECTED LOGIC ---
-        # The model's 'predict' function returns -1 for an anomaly (outlier) and 1 for normal (inlier).
+        # Use decision_function to get a continuous score instead of a binary prediction.
+        score = model.decision_function([features])[0]
         
-        prediction_result = model.predict([features])[0]
-        
-        if prediction_result == -1:
-            # CORRECT: If the model flags it as an ANOMALY (-1), set probability to a very high number.
-            failure_probability = 0.999
-        else:
-            # CORRECT: If the model considers it NORMAL (1), set probability to a very low number.
-            failure_probability = 0.01
+        # Convert the raw score to a 0-1 probability.
+        failure_probability = score_to_probability(score)
 
-        logging.info(f"Prediction successful. Result: {prediction_result}, Prob: {failure_probability:.4f}")
+        logging.info(f"Prediction successful. Score: {score:.4f}, Prob: {failure_probability:.4f}")
         return jsonify({'failure_probability': failure_probability}), 200
 
     except TypeError:
