@@ -5,20 +5,23 @@ import numpy as np
 app = Flask(__name__)
 model = joblib.load('model.pkl')
 
+def sigmoid(x):
+    # Maps any real value to a value between 0 and 1
+    return 1 / (1 + np.exp(-x))
+
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
     features = [data['heart_rate'], data['oxygen_level'], data['temperature']]
-
-    # IsolationForest gives an anomaly score. Lower scores are more anomalous.
-    # We get the opposite of the score, so negative values are anomalies.
-    anomaly_score = model.score_samples([features])[0]
-
-    # We can convert this score to a probability-like value between 0 and 1.
-    # A simple sigmoid function works well here. As the score becomes more
-    # negative (more anomalous), the probability approaches 1.
-    failure_probability = 1.0 / (1.0 + np.exp(anomaly_score))
-
+    
+    # Use decision_function() which returns an anomaly score.
+    # Lower scores mean more anomalous.
+    anomaly_score = model.decision_function([features])[0]
+    
+    # We negate the score and apply a sigmoid function.
+    # This maps a highly anomalous (very negative) score to a probability near 1.0.
+    failure_probability = sigmoid(-anomaly_score)
+    
     return jsonify({'failure_probability': failure_probability})
 
 if __name__ == '__main__':
