@@ -36,10 +36,22 @@ pipeline {
                             mkdir -p heimdall-protocol
                             tar -xzvf heimdall-protocol.tar.gz -C heimdall-protocol
                             cd heimdall-protocol
+                            
+                            echo "Building astronaut simulator..."
                             docker build -t astronaut-simulator ./simulator
+                            
+                            echo "Building prediction API..."
                             docker build -t prediction-api ./prediction_api
-                            docker run -d --rm -e PYTHONUNBUFFERED=1 -p 5001:5001 --name astronaut astronaut-simulator
-                            docker run -d --rm -p 5002:5002 --name predictor prediction-api
+                            
+                            # --- THIS IS THE FIX ---
+                            # Always stop and remove old containers before starting new ones.
+                            echo "Cleaning up old containers..."
+                            docker stop astronaut || true && docker rm astronaut || true
+                            docker stop predictor || true && docker rm predictor || true
+                            
+                            echo "Launching new containers..."
+                            docker run -d -p 5001:5001 --name astronaut astronaut-simulator
+                            docker run -d -p 5002:5002 --name predictor prediction-api
 EOF
                     """
                  }
@@ -52,12 +64,10 @@ EOF
                     timeout(time: 30, unit: 'MINUTES') {
                         script {
                             def failureDetected = false
-                            // Add a delay before the first monitoring check to allow containers to initialize.
-                            sleep(45)
+                            sleep(45) // Allow containers to initialize
                             while (!failureDetected) {
                                 try {
-                                    // This command now redirects stderr to /dev/null to ignore the Flask startup banner.
-                                    def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs astronaut 2>/dev/null | grep \"^{\" | tail -n 1'", returnStdout: true).trim()
+                                    def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs astronaut 2>/dev/null | grep \"^{\\\"heart_rate\" | tail -n 1'", returnStdout: true).trim()
 
                                     if (telemetryLog) {
                                         def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryLog}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
@@ -71,13 +81,9 @@ EOF
                                                 echo "CRITICAL ALERT! FAILURE PROBABILITY EXCEEDS 95%!"
                                                 echo "EXECUTING HEIMDALL PROTOCOL."
                                                 failureDetected = true
-                                                error("Heimdall Protocol Activated")
+                                                error("Heimdall Protocol Activated") // Trigger 'unstable' post-build action
                                             }
-                                        } else {
-                                             echo "Received empty response from prediction API. Retrying..."
                                         }
-                                    } else {
-                                        echo "No valid JSON telemetry log found yet. Retrying..."
                                     }
                                 } catch (Exception e) {
                                     echo "Monitoring check failed: ${e.message}. Retrying..."
@@ -93,12 +99,19 @@ EOF
     post {
         unstable {
             script {
+                echo "Self-healing triggered. Rebuilding infrastructure..."
                 sh 'terraform destroy -auto-approve'
                 build job: 'heimdall-protocol'
             }
         }
         always {
-            sh 'terraform destroy -auto-approve'
+            script {
+                // Ensure cleanup happens even on a successful or aborted build
+                if (currentBuild.result != 'UNSTABLE') {
+                    echo "Pipeline finished. Tearing down infrastructure..."
+                    sh 'terraform destroy -auto-approve'
+                }
+            }
         }
     }
 }
