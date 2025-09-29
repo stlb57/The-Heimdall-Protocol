@@ -6,7 +6,6 @@ import logging
 import os
 from typing import Dict, List, Any, Tuple, Union
 
-
 # --- Setup professional logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -44,33 +43,24 @@ def predict() -> Tuple[Any, int]:
             missing_keys = [key for key in required_keys if key not in data]
             error_msg = f"Missing required telemetry data: {', '.join(missing_keys)}"
             logging.warning(f"Bad request: {error_msg}")
-            return jsonify({"error": "error_msg"}), 400
+            return jsonify({"error": error_msg}), 400
 
         features: List[Union[int, float]] = [data['heart_rate'], data['oxygen_level'], data['temperature']]
         
-        anomaly_score: float = model.decision_function([features])[0]
+        # --- THE FINAL, SIMPLIFIED FIX: A DIRECT IF/ELSE CHECK ---
+        # The model's 'predict' function is the simplest way to check for an anomaly.
+        # It returns -1 for an anomaly (outlier) and 1 for normal (inlier).
+        
+        prediction_result = model.predict([features])[0]
+        
+        if prediction_result == -1:
+            # If the model flags it as an ANOMALY, set probability to a very high number.
+            failure_probability = 0.999
+        else:
+            # If the model considers it NORMAL, set probability to a very low number.
+            failure_probability = 0.01
 
-        # --- THE FINAL, SIMPLIFIED FIX: DIRECT LINEAR SCALING ---
-        # We are abandoning the sigmoid (exp) function because the model's capped score
-        # is too small for it to work effectively.
-        
-        # This new logic is simple and aggressive:
-        # 1. Take the absolute value of the score.
-        # 2. Linearly scale it. We'll define a score of 0.2 or higher as 100% failure.
-        # 3. Cap the result between 0.0 and 1.0 to ensure it's a valid probability.
-        
-        absolute_score = abs(anomaly_score)
-        
-        # We define our 'failure threshold' for the score. Let's say a score of 0.2 is max failure.
-        FAILURE_SCORE_THRESHOLD = 0.2
-        
-        # Scale the score to a 0-1 range based on our threshold
-        scaled_prob = absolute_score / FAILURE_SCORE_THRESHOLD
-        
-        # Clamp the value between 0 and 1 to handle scores above the threshold
-        failure_probability = max(0.0, min(1.0, scaled_prob))
-
-        logging.info(f"Prediction successful. Score: {anomaly_score:.4f}, Prob: {failure_probability:.4f}")
+        logging.info(f"Prediction successful. Result: {prediction_result}, Prob: {failure_probability:.4f}")
         return jsonify({'failure_probability': failure_probability}), 200
 
     except TypeError:
