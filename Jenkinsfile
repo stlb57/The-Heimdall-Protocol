@@ -56,7 +56,6 @@ EOF
             }
         }
 
-        // =================== MODIFIED SECTION START ===================
         stage('🔴 Monitor & Self-Heal') {
             steps {
                 sshagent(credentials: ['aws-key']) {
@@ -67,7 +66,6 @@ EOF
                             while (!failureDetected) {
                                 try {
                                     // Step 1: Get live telemetry directly from the simulator's API endpoint.
-                                    // This is the more robust method that avoids scraping docker logs.
                                     def telemetryData = sh(script: "curl --fail -s http://${env.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
 
                                     if (telemetryData) {
@@ -97,24 +95,33 @@ EOF
                 }
             }
         }
-        // =================== MODIFIED SECTION END =====================
     }
+    // =================== MODIFIED SECTION START ===================
     post {
         unstable {
             script {
-                echo "Self-healing triggered. Rebuilding infrastructure..."
+                echo "🔴 Self-healing triggered due to UNSTABLE status."
+                
+                echo "🔵 STEP 1: Tearing down the old, unstable infrastructure..."
                 sh 'terraform destroy -auto-approve'
-                build job: 'heimdall-protocol'
+
+                echo "🟢 STEP 2: Triggering a new build to provision fresh infrastructure. (Not waiting for completion)"
+                // This is the critical fix. 'wait: false' tells Jenkins to start the
+                // new build and immediately let this current build finish, avoiding a deadlock.
+                build job: 'heimdall-protocol', wait: false
             }
         }
         always {
             script {
-                // Ensure cleanup happens even on a successful or aborted build, but not during self-healing
+                // This 'always' block is for normal cleanup. The condition ensures it does NOT
+                // run during a self-healing event, preventing a double-destroy command.
                 if (currentBuild.result != 'UNSTABLE') {
-                    echo "Pipeline finished. Tearing down infrastructure..."
+                    echo "Pipeline finished. Tearing down infrastructure as part of normal cleanup."
                     sh 'terraform destroy -auto-approve'
                 }
             }
         }
     }
+    // =================== MODIFIED SECTION END =====================
 }
+
