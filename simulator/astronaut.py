@@ -11,28 +11,30 @@ app = Flask(__name__)
 CORS(app)
 ASTRONAUT_ID = str(uuid.uuid4())[:8]
 
-# --- THE FIX: We will now manage the fault state within Flask's app context ---
-# This ensures it's handled correctly for each web request.
+# --- THE FIX: Re-introduce state for gradual degradation ---
+# We use a simple dictionary to hold the current oxygen level.
+SIMULATOR_STATE = {'oxygen_level': 99.9}
 
 def get_vitals():
-    """
-    Simulates generating astronaut vitals.
-    This function is now STATELESS for normal operation.
-    """
-    # Check if a fault has been injected by looking for a specific file.
+    """Simulates generating astronaut vitals with slow oxygen degradation."""
+    global SIMULATOR_STATE
+    
     fault_active = os.path.exists("/tmp/fault")
 
-    # Generate anomalous data if fault is active
     if fault_active:
         # Extreme, catastrophic failure values
         heart_rate = random.randint(240, 280)
-        oxygen_level = random.uniform(0, 10)
+        oxygen_level = random.uniform(0, 10) # Critical oxygen
         temperature = round(random.uniform(43.0, 45.0), 2)
     else:
-        # --- THE FIX: Always return a PERFECTLY HEALTHY reading for normal state ---
-        # This prevents the slow degradation that caused the constant 99.9% probability.
+        # --- THE FIX: Normal operation now has degrading oxygen ---
+        # This will create variable probabilities as oxygen slowly drops.
         heart_rate = random.randint(70, 85)
-        oxygen_level = random.uniform(98.0, 99.5)
+        # Decrease the oxygen level slightly with each call
+        SIMULATOR_STATE['oxygen_level'] -= random.uniform(0.1, 0.4)
+        if SIMULATOR_STATE['oxygen_level'] < 85: # Don't let it drop too low in normal state
+            SIMULATOR_STATE['oxygen_level'] = 95.0
+        oxygen_level = SIMULATOR_STATE['oxygen_level']
         temperature = round(random.uniform(36.6, 37.2), 2)
 
     telemetry_for_prediction = {
@@ -42,40 +44,34 @@ def get_vitals():
     }
     return telemetry_for_prediction
 
-# --- API Endpoint for Telemetry ---
 @app.route('/telemetry', methods=['GET'])
 def telemetry():
     """Provides the latest vitals as a JSON response."""
     current_vitals = get_vitals()
-    # Print to log so the Jenkins monitor stage still works
     print(json.dumps(current_vitals))
     return jsonify(current_vitals)
 
-# --- API Endpoint for Injecting Fault ---
 @app.route('/inject_fault', methods=['POST'])
 def inject_fault():
-    """Creates a file to trigger the fault condition."""
+    """Creates/deletes a fault file and resets the simulation state."""
+    global SIMULATOR_STATE
     try:
-        # --- THE FIX: We remove the check that prevents re-injection ---
-        # This allows you to trigger the fault even if the system is already in a fault state.
-        # It also now includes logic to clear the fault.
         if not os.path.exists("/tmp/fault"):
             with open("/tmp/fault", "w") as f:
                 f.write("fault activated")
             print("FAULT INJECTED VIA API CALL.")
             return "Fault injected successfully.", 200
         else:
-            # If fault is already injected, this call will now clear it.
             os.remove("/tmp/fault")
-            print("FAULT CLEARED VIA API CALL.")
-            return "Fault cleared successfully.", 200
+            # --- THE FIX: Reset oxygen level when fault is cleared ---
+            SIMULATOR_STATE['oxygen_level'] = 99.9
+            print("FAULT CLEARED & SIMULATOR RESET VIA API CALL.")
+            return "Fault cleared and simulator reset.", 200
     except Exception as e:
         print(f"Error managing fault file: {e}")
         return "Error managing fault state.", 500
 
-# --- Main execution block to run the web server ---
 if __name__ == "__main__":
-    # Clear any old fault files on startup
     if os.path.exists("/tmp/fault"):
         os.remove("/tmp/fault")
     print(f"🚀 Starting simulation API for Astronaut ID: {ASTRONAUT_ID}")
