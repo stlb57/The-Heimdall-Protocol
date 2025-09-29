@@ -102,8 +102,8 @@ resource "aws_security_group" "heimdall_sg" {
 
 # 7. Create the Drone Server, now with specific network settings
 resource "aws_instance" "drone_server" {
-  # === THIS IS THE CORRECTED LINE ===
-  ami           = "ami-053b0d53c279acc90" # Correct Ubuntu 22.04 LTS for us-east-1
+  # === VERIFIED AMI ID ===
+  ami           = "ami-0bbd8cd8c17ed981ef9" # Ubuntu 22.04 LTS for us-east-1
   instance_type = "t2.micro"
   key_name      = "heimdall-key"
 
@@ -129,3 +129,4 @@ resource "aws_instance" "drone_server" {
 output "public_ip" {
   value = aws_instance.drone_server.public_ip
 }
+
