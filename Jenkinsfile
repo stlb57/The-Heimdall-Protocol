@@ -43,8 +43,6 @@ pipeline {
                             echo "Building prediction API..."
                             docker build -t prediction-api ./prediction_api
                             
-                            # --- THIS IS THE FIX ---
-                            # Always stop and remove old containers before starting new ones to prevent conflicts.
                             echo "Cleaning up old containers..."
                             docker stop astronaut || true && docker rm astronaut || true
                             docker stop predictor || true && docker rm predictor || true
@@ -58,6 +56,7 @@ EOF
             }
         }
 
+        // =================== MODIFIED SECTION START ===================
         stage('🔴 Monitor & Self-Heal') {
             steps {
                 sshagent(credentials: ['aws-key']) {
@@ -67,11 +66,13 @@ EOF
                             sleep(45) // Allow containers to initialize
                             while (!failureDetected) {
                                 try {
-                                    // This grep is now more specific to your JSON structure
-                                    def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs astronaut 2>/dev/null | grep \"^{\\\"heart_rate\" | tail -n 1'", returnStdout: true).trim()
+                                    // Step 1: Get live telemetry directly from the simulator's API endpoint.
+                                    // This is the more robust method that avoids scraping docker logs.
+                                    def telemetryData = sh(script: "curl --fail -s http://${env.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
 
-                                    if (telemetryLog) {
-                                        def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryLog}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
+                                    if (telemetryData) {
+                                        // Step 2: Send that telemetry to the prediction API.
+                                        def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
 
                                         if (predictionResponse) {
                                             def responseJson = readJSON(text: predictionResponse)
@@ -93,9 +94,10 @@ EOF
                             }
                         }
                     }
-                 }
+                }
             }
         }
+        // =================== MODIFIED SECTION END =====================
     }
     post {
         unstable {
@@ -116,4 +118,3 @@ EOF
         }
     }
 }
-
