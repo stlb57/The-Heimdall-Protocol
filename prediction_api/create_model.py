@@ -2,25 +2,34 @@ import joblib
 from sklearn.svm import OneClassSVM
 import numpy as np
 
-# This is the same robust set of "healthy" data.
-healthy_data = [
-    [75, 98.5, 37.0], [80, 99.0, 36.8], [72, 98.2, 37.1], [85, 98.8, 36.9],
-    [78, 99.1, 37.0], [88, 98.9, 36.8], [70, 98.0, 37.2], [90, 99.5, 36.7],
-    [76, 98.6, 37.1], [81, 99.2, 36.9], [73, 98.3, 37.0], [86, 98.7, 36.8],
-    [79, 99.3, 37.1], [87, 98.8, 36.9], [71, 98.1, 37.2], [89, 99.4, 36.7],
-    [68, 99.8, 36.6], [92, 99.6, 36.8], [77, 98.4, 37.0], [83, 99.0, 36.9]
-]
+print("Generating a more robust training dataset...")
 
-# --- MODEL CHANGE ---
-# We are now using a OneClassSVM model. It is more robust for this type of anomaly detection.
-# 'nu' is an estimate of the proportion of outliers in the data (a small number is good).
-# 'gamma' and 'kernel' are standard SVM parameters.
+# --- NEW: Generate a larger, more realistic dataset ---
+# Instead of a small, fixed list, we'll generate 500 "healthy" samples.
+# This makes the model much more aware of the normal operating range.
+np.random.seed(42) # for reproducibility
+num_samples = 500
+
+heart_rates = np.random.uniform(70, 90, num_samples)
+oxygen_levels = np.random.uniform(98.0, 99.5, num_samples)
+temperatures = np.random.uniform(36.7, 37.2, num_samples)
+
+# Combine into a single dataset
+healthy_data = np.column_stack([heart_rates, oxygen_levels, temperatures])
+
+print(f"{num_samples} healthy data points generated.")
+
+# --- MODEL TRAINING (same as before, but on the new data) ---
+# 'nu' is an estimate of the proportion of outliers in the data. 
+# 0.05 means we expect about 5% of the training data to be noisy.
 model = OneClassSVM(kernel='rbf', gamma='auto', nu=0.05)
 
 # Train the model on what healthy data looks like.
+print("Training the new OneClassSVM model...")
 model.fit(healthy_data)
 
 # Save the trained model to a file.
 joblib.dump(model, 'model.pkl')
 
-print("A new SVM model (model.pkl) has been created successfully.")
+print("\n✅ A new, more robust model (model.pkl) has been created successfully.")
+print("   You can now rebuild and deploy your application.")
