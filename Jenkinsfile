@@ -38,7 +38,7 @@ pipeline {
                             cd heimdall-protocol
                             docker build -t astronaut-simulator ./simulator
                             docker build -t prediction-api ./prediction_api
-                            docker run -d --rm -p 5001:5001 --name astronaut astronaut-simulator
+                            docker run -d --rm -e PYTHONUNBUFFERED=1 -p 5001:5001 --name astronaut astronaut-simulator
                             docker run -d --rm -p 5002:5002 --name predictor prediction-api
 EOF
                     """
