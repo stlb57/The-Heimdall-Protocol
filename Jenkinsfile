@@ -48,70 +48,58 @@ EOF
             }
         }
 
-        // =================== MODIFIED SECTION START ===================
-        stage('🔴 Monitor & Self-Heal') {
+        // =================== SIMPLIFIED MONITORING STAGE ===================
+        stage('🔴 Monitor System') {
             steps {
-                script {
-                    try {
-                        timeout(time: 30, unit: 'MINUTES') {
-                            def failureDetected = false
-                            sleep(45) // Allow containers to initialize
-                            while (!failureDetected) {
-                                // Get live telemetry directly from the simulator's API endpoint.
+                timeout(time: 30, unit: 'MINUTES') {
+                    script {
+                        def failureDetected = false
+                        sleep(45) // Allow containers to initialize
+                        while (!failureDetected) {
+                            try {
                                 def telemetryData = sh(script: "curl --fail -s http://${env.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
-
                                 if (telemetryData) {
-                                    // Send telemetry to the prediction API.
                                     def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
-
                                     if (predictionResponse) {
                                         def responseJson = readJSON(text: predictionResponse)
                                         def failureProb = responseJson.failure_probability
                                         echo "Monitoring... Current Failure Probability: ${(failureProb * 100).round(2)}%"
-
                                         if (failureProb > 0.90) {
                                             failureDetected = true
-                                            // This error call is caught by the 'catch' block below
+                                            // This will fail the stage and set the build to UNSTABLE
                                             error("Heimdall Protocol Activated: Failure probability exceeded 90%.")
                                         }
                                     }
                                 }
-                                sleep(5)
+                            } catch (Exception e) {
+                                echo "Monitoring check failed: ${e.message}. Retrying..."
                             }
+                            sleep(5)
                         }
-                    } catch (Exception e) {
-                        // THIS IS THE SELF-HEALING LOGIC BLOCK
-                        echo "🔴 CATCH BLOCK: SELF-HEALING PROTOCOL INITIATED due to: ${e.message}"
-
-                        echo "🔵 STEP 1: Tearing down the old, unstable infrastructure..."
-                        sh 'terraform destroy -auto-approve'
-
-                        echo "🟢 STEP 2: Triggering a new build to provision fresh infrastructure. (Not waiting for completion)"
-                        build job: 'heimdall-protocol', wait: false
-
-                        // Explicitly set the build result so the 'always' block behaves correctly.
-                        currentBuild.result = 'UNSTABLE'
                     }
                 }
             }
         }
-        // =================== MODIFIED SECTION END =====================
     }
-    // =================== MODIFIED POST BLOCK START ==================
+    // =================== FINAL, CORRECTED POST BLOCK ===================
     post {
-        always {
+        // This block runs ONLY when the build is UNSTABLE (e.g., from our error() call)
+        unstable {
             script {
-                // This 'always' block is now only for normal cleanup.
-                // It will only run if the pipeline completes successfully.
-                if (currentBuild.result == 'SUCCESS') {
-                    echo "✅ Pipeline finished with SUCCESS. Tearing down infrastructure as part of normal cleanup."
-                    sh 'terraform destroy -auto-approve'
-                } else {
-                    echo "🟡 Pipeline did not finish successfully (Status: ${currentBuild.result}). Normal cleanup skipped to allow for investigation or self-healing."
-                }
+                echo "🔴 SELF-HEALING: Build is UNSTABLE. Initiating recovery protocol."
+                echo "STEP 1: Destroying faulty infrastructure..."
+                sh 'terraform destroy -auto-approve'
+                echo "STEP 2: Triggering new build to provision fresh infrastructure..."
+                build job: 'heimdall-protocol', wait: false
+            }
+        }
+        // This block runs ONLY on a completely successful build
+        success {
+            script {
+                echo "✅ SUCCESS: Pipeline completed normally. Tearing down infrastructure."
+                sh 'terraform destroy -auto-approve'
             }
         }
     }
-    // =================== MODIFIED POST BLOCK END ====================
 }
 
