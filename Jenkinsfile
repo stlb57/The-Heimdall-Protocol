@@ -56,13 +56,10 @@ EOF
                             sleep(45)
                             while (!failureDetected) {
                                 try {
-                                    // This improved command is more robust. It gets all logs, finds only the lines that are
-                                    // JSON (by looking for '{' at the start), and takes the very last one.
-                                    def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs astronaut | grep \"^{\" | tail -n 1'", returnStdout: true).trim()
+                                    // This command now redirects stderr to /dev/null to ignore the Flask startup banner.
+                                    def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs astronaut 2>/dev/null | grep \"^{\" | tail -n 1'", returnStdout: true).trim()
 
-                                    // Only proceed if a valid telemetry log was actually found.
                                     if (telemetryLog) {
-                                        // We've added '--fail' to ensure that HTTP errors (like 400 or 500) cause this step to fail.
                                         def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryLog}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
 
                                         if (predictionResponse) {
@@ -74,21 +71,18 @@ EOF
                                                 echo "CRITICAL ALERT! FAILURE PROBABILITY EXCEEDS 95%!"
                                                 echo "EXECUTING HEIMDALL PROTOCOL."
                                                 failureDetected = true
-                                                // The 'error' step marks the stage as unstable, which triggers the 'post' action.
                                                 error("Heimdall Protocol Activated")
                                             }
                                         } else {
                                              echo "Received empty response from prediction API. Retrying..."
                                         }
-
                                     } else {
                                         echo "No valid JSON telemetry log found yet. Retrying..."
                                     }
                                 } catch (Exception e) {
-                                    // This block will now correctly catch failures from the ssh or curl commands.
                                     echo "Monitoring check failed: ${e.message}. Retrying..."
                                 }
-                                sleep(5) // Wait 5 seconds before the next check.
+                                sleep(5)
                             }
                         }
                     }
