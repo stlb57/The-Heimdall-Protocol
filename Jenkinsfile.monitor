@@ -1,0 +1,69 @@
+pipeline {
+    agent any
+
+    tools {
+        terraform 'terraform-latest'
+    }
+
+    // This pipeline receives the SERVER_IP from the main build job
+    parameters {
+        string(name: 'SERVER_IP', defaultValue: '', description: 'The IP address of the server to monitor.')
+    }
+
+    environment {
+        AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+        TF_IN_AUTOMATION      = 'true'
+    }
+
+    stages {
+        stage('🔬 Monitor System') {
+            steps {
+                script {
+                    echo "MONITOR: Starting to monitor server at IP: ${params.SERVER_IP}"
+                }
+                timeout(time: 60, unit: 'MINUTES') { // Failsafe timeout
+                    script {
+                        def failureDetected = false
+                        // Allow a moment for services to be fully online
+                        sleep(45) 
+                        while (!failureDetected) {
+                            try {
+                                def telemetryData = sh(script: "curl --fail -s http://${params.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
+                                def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${params.SERVER_IP}:5002/predict", returnStdout: true).trim()
+                                def responseJson = readJSON(text: predictionResponse)
+                                def failureProb = responseJson.failure_probability
+                                echo "Monitoring ${params.SERVER_IP}... Failure Probability: ${(failureProb * 100).round(2)}%"
+                                
+                                if (failureProb > 0.90) {
+                                    failureDetected = true
+                                    error("HEALING TRIGGERED: Failure probability exceeded 90%.")
+                                }
+                            } catch (Exception e) {
+                                echo "MONITOR: A check failed: ${e.message}. The server may be down. Triggering heal."
+                                // If curl fails, it means the server is down. Trigger healing.
+                                failureDetected = true
+                                error("HEALING TRIGGERED: Server at ${params.SERVER_IP} is unresponsive.")
+                            }
+                            sleep(5)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // This post block is the HEALER. It only runs when the monitor stage fails.
+    post {
+        unstable {
+            script {
+                echo "🔴 SELF-HEALING: Monitor detected failure. Initiating recovery."
+                echo "STEP 1: Destroying faulty infrastructure..."
+                // This requires the .tf files to be in the workspace
+                sh 'terraform init'
+                sh 'terraform destroy -auto-approve'
+                echo "STEP 2: Triggering new build to provision fresh infrastructure..."
+                build job: 'heimdall-protocol', wait: false
+            }
+        }
+    }
+}
