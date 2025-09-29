@@ -1,0 +1,15 @@
+# Terraform files
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# Python virtual environments
+venv/
+*.pyc
+
+# IDE files
+.idea/
+.vscode/
+
+# Local files
+server_ip.txt

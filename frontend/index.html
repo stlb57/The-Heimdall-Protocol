@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heimdall Protocol - Mission Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #0a0e1a;
+            color: #c0c5d5;
+        }
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+        .data-value {
+            font-weight: 700;
+            color: #50fa7b; /* Green for data */
+            min-width: 80px;
+            display: inline-block;
+            text-align: right;
+        }
+        .data-value.warning { color: #f1fa8c; } /* Yellow */
+        .data-value.danger { color: #ff5555; } /* Red */
+
+        .status-light {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #6272a4; /* Gray */
+            transition: background-color 0.5s ease;
+        }
+        .status-light.nominal { background-color: #50fa7b; } /* Green */
+        .status-light.warning { background-color: #f1fa8c; } /* Yellow */
+        .status-light.danger { background-color: #ff5555; } /* Red */
+        
+        #log-container {
+            height: 200px;
+            background-color: #060913;
+            border: 1px solid #282a36;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="font-orbitron text-3xl md:text-4xl font-bold text-cyan-400">HEIMDALL PROTOCOL</h1>
+            <p class="text-lg text-gray-400">MISSION CONTROL</p>
+        </header>
+
+        <!-- Connection Panel -->
+        <div class="bg-gray-800/50 backdrop-blur-sm rounded-lg p-4 mb-6 border border-gray-700 shadow-lg">
+             <h2 class="font-orbitron text-xl font-bold mb-3 text-pink-400">Data Link</h2>
+            <div class="flex flex-col sm:flex-row items-center gap-4">
+                <input type="text" id="server-ip" placeholder="Enter Server IP Address" class="w-full sm:w-1/2 bg-gray-900 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+                <button id="connect-btn" class="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2 px-6 rounded transition-all duration-300">Establish Connection</button>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Left Panel: Status & Telemetry -->
+            <div class="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6 border border-gray-700 shadow-lg space-y-4">
+                <div class="flex justify-between items-center">
+                    <h2 class="font-orbitron text-xl font-bold text-pink-400">SYSTEM STATUS</h2>
+                    <div id="status-light" class="status-light"></div>
+                </div>
+                <p id="status-text" class="text-lg font-bold text-gray-300">Awaiting Connection...</p>
+                <hr class="border-gray-700"/>
+                <div>
+                    <h3 class="font-orbitron text-lg font-bold mb-3 text-pink-400/80">LIVE TELEMETRY</h3>
+                    <div class="space-y-2 text-lg">
+                        <p>Heart Rate: <span id="heart-rate" class="data-value">--</span> bpm</p>
+                        <p>Oxygen Level: <span id="oxygen-level" class="data-value">--</span> %</p>
+                        <p>Suit Temp: <span id="temperature" class="data-value">--</span> °C</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: AI & Controls -->
+            <div class="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6 border border-gray-700 shadow-lg space-y-4">
+                 <div>
+                    <h2 class="font-orbitron text-xl font-bold mb-3 text-pink-400">AI ANALYSIS</h2>
+                    <p class="text-lg">Failure Probability:</p>
+                    <p id="failure-probability" class="text-5xl font-bold text-gray-300 transition-colors duration-500">0.00 %</p>
+                </div>
+                <hr class="border-gray-700"/>
+                <div>
+                    <h3 class="font-orbitron text-lg font-bold mb-3 text-pink-400/80">CHAOS CONTROLLER</h3>
+                    <button id="inject-fault-btn" class="w-full bg-red-600 hover:bg-red-500 disabled:bg-red-900 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded transition-all duration-300">INJECT FAULT</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Log Panel -->
+        <div class="mt-6 bg-gray-800/50 backdrop-blur-sm rounded-lg p-4 border border-gray-700 shadow-lg">
+            <h2 class="font-orbitron text-xl font-bold mb-3 text-pink-400">EVENT LOG</h2>
+            <div id="log-container" class="p-2 overflow-y-auto text-sm font-mono rounded">
+                <p class="text-gray-500">Log stream initialized. Waiting for connection...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const serverIpInput = document.getElementById('server-ip');
+        const connectBtn = document.getElementById('connect-btn');
+        const statusLight = document.getElementById('status-light');
+        const statusText = document.getElementById('status-text');
+        const heartRateEl = document.getElementById('heart-rate');
+        const oxygenLevelEl = document.getElementById('oxygen-level');
+        const temperatureEl = document.getElementById('temperature');
+        const failureProbEl = document.getElementById('failure-probability');
+        const injectFaultBtn = document.getElementById('inject-fault-btn');
+        const logContainer = document.getElementById('log-container');
+
+        let monitoringInterval = null;
+        let serverIp = '';
+
+        // --- UTILITY FUNCTIONS ---
+        const addLog = (message, type = 'info') => {
+            const now = new Date().toLocaleTimeString();
+            const p = document.createElement('p');
+            let colorClass = 'text-gray-400';
+            if (type === 'success') colorClass = 'text-green-400';
+            if (type === 'error') colorClass = 'text-red-400';
+            if (type === 'warning') colorClass = 'text-yellow-400';
+            p.className = colorClass;
+            p.textContent = `[${now}] ${message}`;
+            logContainer.appendChild(p);
+            logContainer.scrollTop = logContainer.scrollHeight; // Auto-scroll
+        };
+        
+        const updateUI = (telemetry, prediction) => {
+            // Update telemetry values
+            heartRateEl.textContent = telemetry.heart_rate.toFixed(0);
+            oxygenLevelEl.textContent = telemetry.oxygen_level.toFixed(2);
+            temperatureEl.textContent = telemetry.temperature.toFixed(2);
+
+            // Update failure probability
+            const probability = prediction.failure_probability * 100;
+            failureProbEl.textContent = `${probability.toFixed(2)} %`;
+
+            // Update status based on probability
+            statusLight.className = "status-light"; // reset classes
+            failureProbEl.className = "text-5xl font-bold transition-colors duration-500";
+            
+            if (probability > 95) {
+                statusLight.classList.add('danger');
+                statusText.textContent = 'CRITICAL FAILURE IMMINENT';
+                failureProbEl.classList.add('text-red-500');
+            } else if (probability > 75) {
+                statusLight.classList.add('warning');
+                statusText.textContent = 'ANOMALY DETECTED';
+                failureProbEl.classList.add('text-yellow-400');
+            } else {
+                statusLight.classList.add('nominal');
+                statusText.textContent = 'SYSTEM NOMINAL';
+                 failureProbEl.classList.add('text-green-400');
+            }
+        };
+
+        // --- CORE LOGIC ---
+        const startMonitoring = () => {
+            serverIp = serverIpInput.value.trim();
+            if (!serverIp) {
+                addLog('Server IP cannot be empty.', 'error');
+                return;
+            }
+
+            // Disable form and start monitoring
+            serverIpInput.disabled = true;
+            connectBtn.disabled = true;
+            connectBtn.textContent = 'Connected';
+            addLog(`Establishing connection to ${serverIp}...`, 'success');
+            
+            injectFaultBtn.disabled = false;
+
+            if (monitoringInterval) clearInterval(monitoringInterval);
+
+            monitoringInterval = setInterval(async () => {
+                try {
+                    // Step 1: Fetch telemetry from the simulator
+                    // IMPORTANT: We need to add a '/telemetry' endpoint to astronaut.py later
+                    const telemetryResponse = await fetch(`http://${serverIp}:5001/telemetry`);
+                    if (!telemetryResponse.ok) throw new Error(`Telemetry service returned status ${telemetryResponse.status}`);
+                    const telemetryData = await telemetryResponse.json();
+
+                    // Step 2: Send telemetry to the prediction API
+                    const predictionResponse = await fetch(`http://${serverIp}:5002/predict`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(telemetryData)
+                    });
+                    if (!predictionResponse.ok) throw new Error(`Prediction service returned status ${predictionResponse.status}`);
+                    const predictionData = await predictionResponse.json();
+                    
+                    // Step 3: Update the dashboard
+                    updateUI(telemetryData, predictionData);
+                    addLog(`Data received. Failure prob: ${(predictionData.failure_probability * 100).toFixed(2)}%`);
+
+                } catch (error) {
+                    addLog(error.message, 'error');
+                    statusText.textContent = 'CONNECTION LOST';
+                    statusLight.className = "status-light"; // Reset to gray
+                    // Optionally, stop the interval on repeated errors
+                    // clearInterval(monitoringInterval);
+                }
+            }, 2000); // Poll every 2 seconds
+        };
+        
+        const handleInjectFault = async () => {
+            if (!serverIp) {
+                addLog('Cannot inject fault. Not connected to a server.', 'error');
+                return;
+            }
+            addLog('Injecting fault into simulator...', 'warning');
+            try {
+                const response = await fetch(`http://${serverIp}:5001/inject_fault`, { method: 'POST' });
+                if (!response.ok) throw new Error(`Fault injection failed with status ${response.status}`);
+                const resultText = await response.text();
+                addLog(`Simulator response: ${resultText}`, 'success');
+            } catch (error) {
+                addLog(error.message, 'error');
+            }
+        };
+
+        // --- EVENT LISTENERS ---
+        connectBtn.addEventListener('click', startMonitoring);
+        injectFaultBtn.addEventListener('click', handleInjectFault);
+        
+        // Initial state
+        injectFaultBtn.disabled = true;
+    </script>
+</body>
+</html>
