@@ -27,7 +27,7 @@ def predict():
         # Convert the anomaly score to a 0-1 probability.
         # This is a simple sigmoid-like scaling. As score goes from negative to positive,
         # probability goes from near 0 to near 1.
-        failure_probability = 1 / (1 + np.exp(-anomaly_score * 5)) # The multiplier '5' sharpens the curve
+        failure_probability = 1 / (1 + np.exp(-anomaly_score * 15)) # The multiplier '5' sharpens the curve
 
         return jsonify({'failure_probability': failure_probability})
 
