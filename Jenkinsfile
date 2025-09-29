@@ -48,11 +48,13 @@ EOF
             }
         }
     }
-    // This post block now only runs on SUCCESS
-    // It's one and only job is to hand off control to the monitor.
     post {
         success {
             script {
+                // ✅ NEW: Archive the Terraform state so the monitor can use it
+                echo "Archiving Terraform state files..."
+                archiveArtifacts artifacts: 'terraform.tfstate, .terraform.lock.hcl', followSymlinks: false
+
                 echo "✅ BUILD SUCCESSFUL. Handing off to the monitoring pipeline..."
                 def serverIp = readFile('server_ip.txt').trim()
                 build job: 'heimdall-monitor', 
