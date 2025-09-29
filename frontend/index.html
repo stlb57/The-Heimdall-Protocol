@@ -150,7 +150,7 @@
             statusLight.className = "status-light"; // reset classes
             failureProbEl.className = "text-5xl font-bold transition-colors duration-500";
             
-            if (probability > 95) {
+            if (probability > 90) {
                 statusLight.classList.add('danger');
                 statusText.textContent = 'CRITICAL FAILURE IMMINENT';
                 failureProbEl.classList.add('text-red-500');
