@@ -27,9 +27,13 @@ pipeline {
         stage('🔵 Deploy Application') {
             steps {
                 sshagent(credentials: ['aws-key']) {
-                    // This is the updated, hardened tar command
-                    sh "tar -czvf heimdall-protocol.tar.gz --exclude='.git' --exclude='temp_model_env' ."
+                    // Create a clean, small archive excluding all unnecessary files
+                    sh "tar -czvf heimdall-protocol.tar.gz --exclude='.git' --exclude='temp_model_env' --exclude='.terraform' --exclude='*.tfstate*' ."
+                    
+                    // Transfer the single, small archive file
                     sh "scp -o StrictHostKeyChecking=no -o BatchMode=yes heimdall-protocol.tar.gz ubuntu@${env.SERVER_IP}:~/"
+                    
+                    // Unpack and deploy on the remote server
                     sh """
                         ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} << 'EOF'
                             set -e
