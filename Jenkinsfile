@@ -27,13 +27,11 @@ pipeline {
         stage('🔵 Deploy Application') {
             steps {
                 sshagent(credentials: ['aws-key']) {
-                    // Create a clean, small archive excluding all unnecessary files
+                    // This new loop waits for the SSH port to be open AND for the Docker command to be available.
+                    sh "sleep 30 && until ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker --version'; do echo 'Waiting for Docker to be ready...'; sleep 10; done"
+                    
                     sh "tar -czvf heimdall-protocol.tar.gz --exclude='.git' --exclude='temp_model_env' --exclude='.terraform' --exclude='*.tfstate*' ."
-                    
-                    // Transfer the single, small archive file
                     sh "scp -o StrictHostKeyChecking=no -o BatchMode=yes heimdall-protocol.tar.gz ubuntu@${env.SERVER_IP}:~/"
-                    
-                    // Unpack and deploy on the remote server
                     sh """
                         ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} << 'EOF'
                             set -e
@@ -57,6 +55,10 @@ pipeline {
                         def failureDetected = false
                         while (!failureDetected) {
                             try {
+                                // Add a 10-second delay before the first monitoring check to allow containers to initialize.
+                                if (isUnix() || isWindows()) { // A simple way to check if it's the first loop run.
+                                    sleep(10)
+                                }
                                 def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs --tail 1 astronaut'", returnStdout: true).trim()
                                 def predictionResponse = sh(script: "curl -s -X POST -H \"Content-Type: application/json\" -d '${telemetryLog}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
                                 def responseJson = readJSON(text: predictionResponse)
