@@ -25,31 +25,25 @@ pipeline {
                         sleep(45) 
                         
                         while (!failureDetected) {
-                            def predictionResponse = null // Initialize before the try block
                             try {
-                                // The 'try' block now ONLY handles network/command failures.
                                 def telemetryData = sh(script: "curl --fail -s http://${params.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
-                                predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${params.SERVER_IP}:5002/predict", returnStdout: true).trim()
-                            
-                            } catch (Exception e) {
-                                // This ONLY runs if a 'curl' command fails (e.g., server is down).
-                                echo "MONITOR: Server at ${params.SERVER_IP} is unresponsive. Triggering self-healing."
-                                failureDetected = true
-                                // This will correctly set the build to UNSTABLE and trigger the post-build action.
-                                error("Heimdall Protocol Activated: Server is unresponsive.") 
-                            }
-                            
-                            // This logic now runs ONLY if the 'try' block was successful.
-                            if (predictionResponse) {
+                                def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${params.SERVER_IP}:5002/predict", returnStdout: true).trim()
+                                
                                 def responseJson = readJSON(text: predictionResponse)
                                 def failureProb = responseJson.failure_probability
                                 echo "Monitoring ${params.SERVER_IP}... Failure Probability: ${(failureProb * 100).round(2)}%"
                                 
                                 if (failureProb > 0.90) {
                                     failureDetected = true
-                                    // This is now the ONLY error call for this condition, ensuring an UNSTABLE status.
+                                    // This call correctly sets the build status to FAILURE
                                     error("Heimdall Protocol Activated: Failure probability exceeded 90%.")
                                 }
+
+                            } catch (Exception e) {
+                                echo "MONITOR: Server at ${params.SERVER_IP} is unresponsive. Triggering self-healing."
+                                failureDetected = true
+                                // This call correctly sets the build status to FAILURE
+                                error("Heimdall Protocol Activated: Server is unresponsive.") 
                             }
                             sleep(5)
                         }
@@ -58,11 +52,12 @@ pipeline {
             }
         }
     }
-    // This post block will now execute correctly on an UNSTABLE status.
+    // =================== FINAL, CORRECTED POST BLOCK ===================
     post {
-        unstable {
+        // This block now correctly runs ONLY when the build status is FAILURE
+        failure {
             script {
-                echo "🔴 SELF-HEALING: Monitor detected failure. Initiating recovery."
+                echo "🔴 SELF-HEALING: Build has FAILED. Initiating recovery protocol."
                 echo "STEP 1: Destroying faulty infrastructure..."
                 sh 'terraform init'
                 sh 'terraform destroy -auto-approve'
