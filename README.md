@@ -1,42 +1,39 @@
-🚀 Heimdall Protocol — Autonomous Self-Healing Infrastructure
-A fully autonomous AIOps experiment that predicts infrastructure failure — and rebuilds itself before it crashes.
+🚀 **Heimdall Protocol — Autonomous Self-Healing Infrastructure**
+*A fully autonomous AIOps experiment that predicts infrastructure failure — and rebuilds itself before it crashes.*
 
-How do you save an astronaut when you're 400 km away and their life support is failing?
-You don’t wait for alerts. You predict the failure — and rebuild the system before it breaks.
+---
 
-Heimdall Protocol is an experimental self-healing framework built with AWS + Terraform + Jenkins + Docker + Machine Learning.
+### 🧠 Concept
 
-It simulates real-time astronaut vitals, predicts anomalies using an ML model, and when a critical failure is detected, it automatically destroys and rebuilds its own infrastructure — without human intervention.
+**How do you save an astronaut when you're 400 km away and their life support is failing?**
+You don’t wait for alerts.
+You **predict the failure — and rebuild the system before it breaks.**
 
-🛰️ Mission Control Dashboard
-🔮 Predict → Act → Heal
-Phase
+**Heimdall Protocol** is an experimental self-healing framework built with:
 
-Component
+> **AWS + Terraform + Jenkins + Docker + Machine Learning**
 
-Description
+It **simulates real-time astronaut vitals**, **predicts anomalies using an ML model**, and when a critical failure is detected...
 
-SIMULATE
+> ⚠️ **It destroys and rebuilds its own infrastructure — without human intervention.**
 
-astronaut.py
+---
 
-Streams fake heart rate, oxygen, temperature — with fault injection.
+### 🛰️ Mission Control Dashboard – *Predict → Act → Heal*
 
-PREDICT
+| Phase        | Component              | Description                                                          |
+| ------------ | ---------------------- | -------------------------------------------------------------------- |
+| **SIMULATE** | `astronaut.py`         | Streams fake heart rate, oxygen, temperature — with fault injection. |
+| **PREDICT**  | `app.py` + OneClassSVM | ML model calculates real-time failure probability.                   |
+| **HEAL**     | Jenkins + Terraform    | If probability > 90%, the system destroys and rebuilds itself.       |
 
-app.py + OneClassSVM
+---
 
-ML model calculates real-time failure probability.
+### ⚙️ System Architecture (Dual-Pipeline Design)
 
-HEAL
+Prevents deadlocks and ensures a clean hand-off between **building** and **healing**.
 
-Jenkins + Terraform
-
-If probability > 90%, the system destroys and rebuilds itself.
-
-⚙️ System Architecture
-The architecture uses a decoupled, two-pipeline design to prevent deadlocks and ensure a reliable hand-off between building and healing.
-
+```
 +----------------------+       +----------------------+
 | Jenkins Job #1       |       | Jenkins Job #2       |
 | heimdall-protocol    |       | heimdall-monitor     |
@@ -48,63 +45,61 @@ The architecture uses a decoupled, two-pipeline design to prevent deadlocks and 
    +-------------------------------------------------------------+
    |                       AWS EC2 Instance                      |
    |                                                             |
-   |  [Docker Container: Simulator] <---> [Docker Container: ML]   |
+   |  [Docker: Simulator] <---> [Docker: ML API]                 |
    |                                                             |
    +-------------------------------------------------------------+
            ^                                     |
            | Archive State &                     | Destroy
            | Trigger Monitor                     |
            +-------------------> Monitor <-----------------------+
+```
 
-🔄 Self-Healing Cycle — Fully Automated
-✅ Build & Deploy (heimdall-protocol job)
+---
 
-📦 Archive terraform.tfstate as a build artifact.
+### 🔄 Self-Healing Cycle — *Fully Automated*
 
-🤝 Trigger Monitor with the new EC2 instance IP.
+✅ **Build & Deploy** → archive `terraform.tfstate`
+🤝 **Trigger monitor job** with new server IP
+🧠 **Predict continuously via APIs**
+🚨 **Threshold breach** → job fails intentionally
+🔥 **Terraform destroy**
+🚀 **Rebuild from scratch**
 
-🧠 Continuously Predict failure probability by calling the APIs.
+---
 
-🚨 Threshold Breach → The monitor job calls error(), failing the build.
+### 🚀 Getting Started
 
-🔥 Destroy Infrastructure → The post { failure } block copies the artifact and runs terraform destroy.
+**Requirements**
 
-🚀 Rebuild Instance → The monitor's final step triggers a new heimdall-protocol job.
+* AWS Account + IAM Access
+* Terraform & AWS CLI
+* Jenkins Server
+* Docker Installed
 
-🚀 Getting Started
-✅ Requirements
-An AWS Account & IAM Access Key
+**Setup**
 
-Terraform & AWS CLI
+1. Install **Terraform** & **Copy Artifact** plugins in Jenkins
+2. Add **AWS & SSH credentials**
+3. Create **Two Pipelines**:
 
-A running Jenkins Server
+```
+heimdall-protocol   → uses Jenkinsfile
+heimdall-monitor    → uses Jenkinsfile.monitor (SERVER_IP param)
+```
 
-Docker Installed
+4. **Run manually once** — then monitoring takes over forever.
 
-Setup Overview
-Configure Jenkins:
+---
 
-Install Terraform and Copy Artifact plugins.
+### 📁 Project Structure
 
-Add AWS & SSH credentials.
-
-Create Two Pipelines:
-
-heimdall-protocol → uses Jenkinsfile
-
-heimdall-monitor → uses Jenkinsfile.monitor (and requires a SERVER_IP string parameter).
-
-Launch:
-
-Manually start the heimdall-protocol job. The monitor will take over automatically upon successful deployment.
-
-📁 Project Structure
+```
 .
-├── Jenkinsfile           # <-- The "Builder" pipeline
-├── Jenkinsfile.monitor   # <-- The "Healer" pipeline
-├── main.tf               # Terraform Infrastructure as Code
-├── create_model.py       # Script to train & export the ML model
-├── index.html            # Mission Control Dashboard UI
+├── Jenkinsfile           # Builder pipeline
+├── Jenkinsfile.monitor   # Healer pipeline
+├── main.tf
+├── create_model.py
+├── index.html            # Mission Control Dashboard
 │
 ├── simulator/
 │   ├── astronaut.py
@@ -116,3 +111,7 @@ Manually start the heimdall-protocol job. The monitor will take over automatical
     ├── model.pkl
     ├── Dockerfile
     └── requirements.txt
+```
+
+---
+
