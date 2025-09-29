@@ -5,7 +5,6 @@ pipeline {
         terraform 'terraform-latest'
     }
 
-    // This pipeline receives the SERVER_IP from the main build job
     parameters {
         string(name: 'SERVER_IP', defaultValue: '', description: 'The IP address of the server to monitor.')
     }
@@ -19,31 +18,38 @@ pipeline {
     stages {
         stage('🔬 Monitor System') {
             steps {
-                script {
-                    echo "MONITOR: Starting to monitor server at IP: ${params.SERVER_IP}"
-                }
-                timeout(time: 60, unit: 'MINUTES') { // Failsafe timeout
+                timeout(time: 60, unit: 'MINUTES') {
                     script {
+                        echo "MONITOR: Starting to monitor server at IP: ${params.SERVER_IP}"
                         def failureDetected = false
-                        // Allow a moment for services to be fully online
                         sleep(45) 
+                        
                         while (!failureDetected) {
+                            def predictionResponse = null // Initialize before the try block
                             try {
+                                // The 'try' block now ONLY handles network/command failures.
                                 def telemetryData = sh(script: "curl --fail -s http://${params.SERVER_IP}:5001/telemetry", returnStdout: true).trim()
-                                def predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${params.SERVER_IP}:5002/predict", returnStdout: true).trim()
+                                predictionResponse = sh(script: "curl --fail -s -X POST -H \"Content-Type: application/json\" -d '${telemetryData}' http://${params.SERVER_IP}:5002/predict", returnStdout: true).trim()
+                            
+                            } catch (Exception e) {
+                                // This ONLY runs if a 'curl' command fails (e.g., server is down).
+                                echo "MONITOR: Server at ${params.SERVER_IP} is unresponsive. Triggering self-healing."
+                                failureDetected = true
+                                // This will correctly set the build to UNSTABLE and trigger the post-build action.
+                                error("Heimdall Protocol Activated: Server is unresponsive.") 
+                            }
+                            
+                            // This logic now runs ONLY if the 'try' block was successful.
+                            if (predictionResponse) {
                                 def responseJson = readJSON(text: predictionResponse)
                                 def failureProb = responseJson.failure_probability
                                 echo "Monitoring ${params.SERVER_IP}... Failure Probability: ${(failureProb * 100).round(2)}%"
                                 
                                 if (failureProb > 0.90) {
                                     failureDetected = true
-                                    error("HEALING TRIGGERED: Failure probability exceeded 90%.")
+                                    // This is now the ONLY error call for this condition, ensuring an UNSTABLE status.
+                                    error("Heimdall Protocol Activated: Failure probability exceeded 90%.")
                                 }
-                            } catch (Exception e) {
-                                echo "MONITOR: A check failed: ${e.message}. The server may be down. Triggering heal."
-                                // If curl fails, it means the server is down. Trigger healing.
-                                failureDetected = true
-                                error("HEALING TRIGGERED: Server at ${params.SERVER_IP} is unresponsive.")
                             }
                             sleep(5)
                         }
@@ -52,13 +58,12 @@ pipeline {
             }
         }
     }
-    // This post block is the HEALER. It only runs when the monitor stage fails.
+    // This post block will now execute correctly on an UNSTABLE status.
     post {
         unstable {
             script {
                 echo "🔴 SELF-HEALING: Monitor detected failure. Initiating recovery."
                 echo "STEP 1: Destroying faulty infrastructure..."
-                // This requires the .tf files to be in the workspace
                 sh 'terraform init'
                 sh 'terraform destroy -auto-approve'
                 echo "STEP 2: Triggering new build to provision fresh infrastructure..."
@@ -67,3 +72,4 @@ pipeline {
         }
     }
 }
+
