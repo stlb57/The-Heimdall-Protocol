@@ -1,6 +1,7 @@
 import json
 import time
-from flask import Flask, jsonify # Import jsonify
+from flask import Flask, jsonify
+from flask_cors import CORS
 import random
 import threading
 
@@ -12,6 +13,7 @@ latest_metrics = {}
 data_lock = threading.Lock()
 
 app = Flask(__name__)
+CORS(app)
 
 # --- API Endpoints ---
 @app.route('/inject_fault', methods=['POST'])
