@@ -30,7 +30,6 @@ pipeline {
                     sh "sleep 30 && until ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker --version'; do echo 'Waiting for Docker to be ready...'; sleep 10; done"
                     sh "tar -czvf heimdall-protocol.tar.gz --exclude='.git' --exclude='temp_model_env' --exclude='.terraform' --exclude='*.tfstate*' ."
                     sh "scp -o StrictHostKeyChecking=no -o BatchMode=yes heimdall-protocol.tar.gz ubuntu@${env.SERVER_IP}:~/"
-                    // The final EOF is no longer indented. This is the fix.
                     sh """
                         ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} << 'EOF'
                             set -e
@@ -49,28 +48,31 @@ EOF
 
         stage('🔴 Monitor & Self-Heal') {
             steps {
-                timeout(time: 30, unit: 'MINUTES') {
-                    script {
-                        def failureDetected = false
-                        // Add a 15-second delay before the first monitoring check to allow containers to initialize.
-                        sleep(15) 
-                        while (!failureDetected) {
-                            try {
-                                def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs --tail 1 astronaut'", returnStdout: true).trim()
-                                def predictionResponse = sh(script: "curl -s -X POST -H \"Content-Type: application/json\" -d '${telemetryLog}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
-                                def responseJson = readJSON(text: predictionResponse)
-                                def failureProb = responseJson.failure_probability
-                                echo "Monitoring... Current Failure Probability: ${(failureProb * 100).round(2)}%"
-                                if (failureProb > 0.95) {
-                                    echo "CRITICAL ALERT! FAILURE PROBABILITY EXCEEDS 95%!"
-                                    echo "EXECUTING HEIMDALL PROTOCOL."
-                                    failureDetected = true
-                                    error("Heimdall Protocol Activated")
+                // This stage also needs the SSH key to get logs from the remote server.
+                sshagent(credentials: ['aws-key']) {
+                    timeout(time: 30, unit: 'MINUTES') {
+                        script {
+                            def failureDetected = false
+                            // Add a 15-second delay before the first monitoring check to allow containers to initialize.
+                            sleep(15) 
+                            while (!failureDetected) {
+                                try {
+                                    def telemetryLog = sh(script: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ubuntu@${env.SERVER_IP} 'docker logs --tail 1 astronaut'", returnStdout: true).trim()
+                                    def predictionResponse = sh(script: "curl -s -X POST -H \"Content-Type: application/json\" -d '${telemetryLog}' http://${env.SERVER_IP}:5002/predict", returnStdout: true).trim()
+                                    def responseJson = readJSON(text: predictionResponse)
+                                    def failureProb = responseJson.failure_probability
+                                    echo "Monitoring... Current Failure Probability: ${(failureProb * 100).round(2)}%"
+                                    if (failureProb > 0.95) {
+                                        echo "CRITICAL ALERT! FAILURE PROBABILITY EXCEEDS 95%!"
+                                        echo "EXECUTING HEIMDALL PROTOCOL."
+                                        failureDetected = true
+                                        error("Heimdall Protocol Activated")
+                                    }
+                                } catch (Exception e) {
+                                    echo "Monitoring check failed: ${e.message}. Retrying..."
                                 }
-                            } catch (Exception e) {
-                                echo "Monitoring check failed: ${e.message}. Retrying..."
+                                sleep(5)
                             }
-                            sleep(5)
                         }
                     }
                 }
