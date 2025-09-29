@@ -1,3 +1,5 @@
+// heimdall-protocol/Jenkinsfile
+
 pipeline {
     agent any
 
@@ -51,17 +53,17 @@ EOF
     post {
         success {
             script {
-                // ✅ NEW: Archive the Terraform state so the monitor can use it
+                // ✅ STEP 1: Archive the Terraform state so the monitor can use it.
                 echo "Archiving Terraform state files..."
-                archiveArtifacts artifacts: 'terraform.tfstate, .terraform.lock.hcl', followSymlinks: false
+                archiveArtifacts artifacts: 'terraform.tfstate*', followSymlinks: false
 
-                echo "✅ BUILD SUCCESSFUL. Handing off to the monitoring pipeline..."
+                // ✅ STEP 2: Hand off to the monitoring pipeline.
+                echo "BUILD SUCCESSFUL. Handing off to the monitoring pipeline..."
                 def serverIp = readFile('server_ip.txt').trim()
-                build job: 'heimdall-monitor', 
-                      parameters: [string(name: 'SERVER_IP', value: serverIp)], 
+                build job: 'heimdall-monitor',
+                      parameters: [string(name: 'SERVER_IP', value: serverIp)],
                       wait: false
             }
         }
     }
 }
-
