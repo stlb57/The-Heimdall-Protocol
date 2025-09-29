@@ -28,9 +28,9 @@ def get_vitals():
 
     # Generate anomalous data if fault is active
     if fault_injected:
-        heart_rate = random.randint(120, 160)
-        oxygen_level -= random.uniform(5, 10) # Rapid oxygen loss
-        temperature = round(random.uniform(38.0, 39.5), 2)
+        heart_rate = random.randint(180, 220)
+        oxygen_level -= random.uniform(15, 25) # Rapid oxygen loss
+        temperature = round(random.uniform(40.0, 42.0), 2)
     else:
         heart_rate = random.randint(65, 85)
         oxygen_level -= random.uniform(0.05, 0.2)
